@@ -1,0 +1,193 @@
+# -*- coding: utf-8 -*-
+#
+# Half_turn_stairs Macro runs with Freecad 0.19
+#
+# Author: L. Hogerhuis
+#         Hogerhuis Webdesign
+#
+# This macro creates a half turn stair 
+
+from __future__ import unicode_literals
+from FreeCAD import Base
+import Part, math
+from FreeCAD import Vector
+
+#
+# Enter below values to define the stairs
+# 
+totalRise   = 2900.0  # (mm) Total Rise floor to floor
+stepRise    = 180.0	  # (mm) maximum vertical rise between steps (dutch: optrede) (Z direction)
+stepDepth   = 200.0   # (mm) horizontal step depth (dutch: aantrede) (X direction)
+stepWidth   = 1100.0  # (mm) width of the step (Y direction)
+stepThick   = 50      # (mm) thickness of each step 
+poleDepth   = 140     # (mm) center pole size (X direction)
+poleWidth   = 220     # (mm) center pole size (Y direction)
+maxSizeY    = 1500    # (mm) stair must fit in this space (Y direction), maxSizeX is calculated (2 x stepWidth)
+
+placementPointX = 0.0	# Startpoint of the first step (with lowest x, y and z values)
+placementPointY = 0.0
+placementPointZ = 2900.0
+
+#
+# End user defineable values
+#
+
+def stepLine(step,steps,maxSize):	# return two coordinates, start and end of a line
+  x=0
+  y=0
+  angle=step/steps*180
+  if (angle <= 45):
+    x=0
+    y=maxSize*math.tan(angle/180*math.pi)
+  elif (angle > 45 and angle <= 90):
+    x=maxSize-maxSize*math.tan((90-angle)/180*math.pi)
+    y=maxSize
+  elif (angle > 90 and angle <= 135):
+    y=maxSize
+    x=maxSize+maxSize*math.tan((angle-90)/180*math.pi)
+  elif (angle > 135 and angle <= 180):
+    x=maxSize*2
+    y=maxSize*math.tan((180-angle)/180*math.pi)
+    
+  return maxSize,0,x,y  
+
+#
+# Main
+#
+App.Console.PrintMessage("Parametric_half_turn_stairs-Macro\n")
+
+stepCount   = int(math.ceil(totalRise/stepRise))    # number of steps required
+stepRise    = (totalRise-stepThick) / stepCount     # adjust stepRise to the actual number of steps required
+stepsStart  = int(round(stepCount / 4))				# number of wsteps for first and last part of stairs
+
+#
+# Check and adjust to fit the stair in maxSizeY
+#
+while ((stepWidth + stepsStart * stepDepth) > maxSizeY) and (stepsStart > 0):
+  stepsStart -= 1
+
+stepsCircle = stepCount - 2*stepsStart # Remaining steps are for the half circle part
+
+App.Console.PrintMessage("StepCount = "+str(stepCount)+" ("+str(stepsStart)+"+"+str(stepsCircle)+"+"+str(stepsStart)+")"+" StepRise = "+str(totalRise/stepCount)+" Total rise = "+str(totalRise)+"\n")
+
+#
+# Create the first steps towards the half circle
+#
+for step in range(0,stepsStart,1):
+  stepBox = Part.makeBox(stepWidth,stepDepth,stepThick)
+  centre = FreeCAD.Vector(placementPointX, placementPointY+step*stepDepth , placementPointZ+stepRise + step * stepRise)
+  stepBox.Placement.Base = centre
+  Part.show(stepBox)
+
+offsetY = stepsStart * stepDepth
+offsetZ = stepRise + stepsStart * stepRise
+
+#
+# Create the half circle steps
+#
+for step in range(0,stepsCircle,1):
+  angle1=step/stepsCircle*180
+  angle2=(step+1)/stepsCircle*180
+  cx1,cy1,x2,y2 = stepLine(step,stepsCircle,stepWidth)
+  cx3,cy3,x4,y4 = stepLine(step+1,stepsCircle,stepWidth)
+
+  if (angle1 < 45 and angle2 > 45) or (angle1 < 135 and angle2 > 135): 	# 4-angle shape step
+    if (angle1 < 45 and angle2 > 45): # what part of the half circle?
+      points = [
+        Vector(placementPointX+cx1,placementPointY+offsetY + cy1,placementPointZ+offsetZ + step * stepRise),
+        Vector(placementPointX+x2, placementPointY+offsetY + y2, placementPointZ+offsetZ + step * stepRise),
+        Vector(placementPointX+x2, placementPointY+offsetY + y4, placementPointZ+offsetZ + step * stepRise),
+        Vector(placementPointX+x4, placementPointY+offsetY + y4, placementPointZ+offsetZ + step * stepRise),
+        ]
+    else:
+      points = [
+        Vector(placementPointX+cx1,placementPointY+offsetY + cy1,placementPointZ+offsetZ + step * stepRise),
+        Vector(placementPointX+x2, placementPointY+offsetY + y2, placementPointZ+offsetZ + step * stepRise),
+        Vector(placementPointX+x4, placementPointY+offsetY + y2, placementPointZ+offsetZ + step * stepRise),
+        Vector(placementPointX+x4, placementPointY+offsetY + y4, placementPointZ+offsetZ + step * stepRise),
+        ]
+
+    L1    = Part.LineSegment(points[0] , points[1] )
+    L2    = Part.LineSegment(points[1] , points[2] )
+    L3    = Part.LineSegment(points[2] , points[3] )
+    L4    = Part.LineSegment(points[3] , points[0] )
+    shape = Part.Shape([L1,L2,L3,L4])
+  
+  else: # 3-angle shape step
+    points = [
+        Vector(placementPointX+cx1,placementPointY+offsetY + cy1,placementPointZ+offsetZ + step * stepRise),
+        Vector(placementPointX+x2, placementPointY+offsetY + y2, placementPointZ+offsetZ + step * stepRise),
+        Vector(placementPointX+x4, placementPointY+offsetY + y4, placementPointZ+offsetZ + step * stepRise),
+        ]
+
+    L1    = Part.LineSegment(points[0] , points[1] )
+    L2    = Part.LineSegment(points[1] , points[2] )
+    L3    = Part.LineSegment(points[2] , points[0] )
+    shape = Part.Shape([L1,L2,L3])
+    
+  wire  = Part.Wire(shape.Edges)
+  face  = Part.Face(wire)
+  faceE = face.extrude(Vector(0,0,stepThick))
+  Part.show(faceE)
+
+offsetX = stepWidth
+offsetZ = stepRise + (stepsStart + stepsCircle) * stepRise
+
+#
+# Create the last steps from the half circle to the upper floor
+#
+
+for step in range(0,stepsStart,1):
+  stepBox = Part.makeBox(stepWidth,stepDepth,stepThick)
+  centre = FreeCAD.Vector(placementPointX+offsetX, placementPointY+offsetY - (stepDepth+step*stepDepth), placementPointZ+offsetZ + step * stepRise)
+  stepBox.Placement.Base = centre
+  Part.show(stepBox)
+
+#
+# Create center pole
+#
+  centerX = stepWidth
+  centerY = stepsStart * stepDepth
+
+  poleBox = Part.makeBox(poleDepth,poleWidth,totalRise)
+  centre = FreeCAD.Vector(placementPointX+centerX-poleDepth/2, placementPointY+centerY-poleWidth/2, placementPointZ)
+  poleBox.Placement.Base = centre
+  Part.show(poleBox)
+
+
+#
+# Create helper (outlines and center) lines on bottom and top to position the stairs
+#
+  for height in range(0, int(totalRise)+1, int(totalRise)):     # bottom and top of stairs
+    points = [
+        Vector(placementPointX+0,           placementPointY+0,                                  placementPointZ+height),
+        Vector(placementPointX+2*stepWidth, placementPointY+0,                                  placementPointZ+height),
+        Vector(placementPointX+2*stepWidth, placementPointY+stepsStart*stepDepth+stepWidth,     placementPointZ+height),
+        Vector(placementPointX+0,           placementPointY+stepsStart*stepDepth+stepWidth,     placementPointZ+height),
+
+        Vector(placementPointX+stepWidth,   placementPointY+0,                                  placementPointZ+height),
+        Vector(placementPointX+stepWidth,   placementPointY+stepsStart*stepDepth+stepWidth,     placementPointZ+height),
+        Vector(placementPointX+0,           placementPointY+(stepsStart*stepDepth+stepWidth)/2, placementPointZ+height),
+        Vector(placementPointX++2*stepWidth,placementPointY+(stepsStart*stepDepth+stepWidth)/2, placementPointZ+height),
+        ]
+
+    # outline stair
+    L1    = Part.LineSegment(points[0] , points[1] )
+    L2    = Part.LineSegment(points[1] , points[2] )
+    L3    = Part.LineSegment(points[2] , points[3] )
+    L4    = Part.LineSegment(points[3] , points[0] )
+    # centerlines
+    L5    = Part.LineSegment(points[4] , points[5] )
+    L6    = Part.LineSegment(points[6] , points[7] )
+
+    shape = Part.Shape([L1,L2,L3,L4]) # rectangle
+    wire  = Part.Wire(shape.Edges)
+    Part.show(wire)
+  
+    shape = Part.Shape([L5,L6]) # centerlines
+    wire  = Part.Wire(shape.Edges)
+    Part.show(wire)
+
+App.Console.PrintMessage("Stair base size. x="+str(2*stepWidth)+"mm y="+str(stepsStart*stepDepth+stepWidth)+"mm Defined size is "+str(maxSizeY)+"mm\n")
+
+#EOF
